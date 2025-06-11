@@ -144,6 +144,12 @@
 
       //***Capas de municipios y provincia***//
 
+
+      var cantabria_provincia = L.geoJson(cantabria, { 
+        style: { "color": "#EB5B00", "weight": 4, "opacity": 0.8, "fillOpacity": 0 }
+      }).addTo(map);
+
+
       var municipios_cantabria = L.geoJson(municipios, { 
         style: { "color": "#3182bd", "weight": 1, "opacity": 3.5, "fillOpacity": 0 },
         onEachFeature: function(feature, layer) {
@@ -157,11 +163,7 @@
         }
         }).addTo(map);
 
-      var cantabria_provincia = L.geoJson(cantabria, { 
-        style: { "color": "#EB5B00", "weight": 4, "opacity": 0.8, "fillOpacity": 0 }
-      }).addTo(map);
-
-
+      
 
       //**Obtener información de la parcela. Accede al proxy.js de ./Api/**//
 
