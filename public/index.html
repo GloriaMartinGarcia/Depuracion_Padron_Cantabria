@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Depuración Padrón</title>
+  
+  <!-- Hoja de estilos de Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+  
+  <style>
+    #map { 
+      height: 800px; 
+      width: 80%; 
+    }
+
+    #coordinates {
+      background-color: rgba(255, 255, 255, 0.8);
+      border: 1px solid #ccc;
+      padding: 10px;
+      position: fixed;
+      top: 10px;
+      right: 20px;
+      z-index: 1000;
+    }
+    #copyButton {
+      margin-top: 10px;
+      cursor: pointer;
+      padding: 5px 10px;
+      background-color: rgb(53, 9, 248);
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    #copyYButton {
+      margin-left: 70px;
+    }
+
+    h1 {
+      font-size: 18px;
+      color: #333;
+    }
+  </style>
+
+    <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Proj4js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.4/proj4.js"></script>
+  <script src="https://unpkg.com/leaflet-plugins/layer/tile/Google.js"></script>
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+  
+  <!--Capas cargadas (municipios y límite de Cantabria)-->
+  <script type="text/javascript" src="municipios.js"></script>
+  <script type="text/javascript" src="cantabria.js"></script>
+
+</head>
+<body>
+
+
+  <div id="map"></div>
+
+  <!-- Cuadro para mostrar solo las coordenadas en ETRS89 UTM -->
+  <div id="coordinates">
+    <p><strong>Coordenadas del ratón:</strong></p>
+    <p>ETRS89</p>
+    <p id="etrs">X=<span id="xCoord"></span>, Y=<span id="yCoord"></span></p>
+    <button class="copyButton" id="copyXButton">Copiar X</button>
+    <button class="copyButton" id="copyYButton">Copiar Y</button>
+  </div>
+
+
+  <script>
+    $(document).ready(function() {
+      // Obtener parámetros de la URL
+      function getQueryParam(param) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(param);
+      }
+
+      const address = getQueryParam('address');
+      const lat = parseFloat(getQueryParam('lat')) || 42.725;
+      const lng = parseFloat(getQueryParam('lng')) || -2.06;  
+      const x = parseFloat(getQueryParam('x'));                
+      const y = parseFloat(getQueryParam('y'));                
+      const zoom = parseInt(getQueryParam('zoom')) || 8;            
+
+      let map;
+      let frozenCoords = false;
+
+      if (!isNaN(x) && !isNaN(y)) {
+        var wgsCoords = proj4('+proj=utm +zone=30 +datum=ETRS89 +units=m +no_defs', 'EPSG:4326', [x, y]);
+        map = L.map('map').setView([wgsCoords[1], wgsCoords[0]], zoom);
+      } else {
+        map = L.map('map').setView([lat, lng], zoom);
+      }
+
+      //***MAPAS BASE***///
+
+      // Capa OSM (OpenStreetMap)
+      var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 40,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      // Capa Google
+      var googleLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=es&z={z}&x={x}&y={y}', {
+        maxZoom: 40,
+        attribution: '&copy; <a href="https://www.google.com/intl/es/help/terms_maps.html">Google Maps</a>'
+      });
+
+      // Capa PNOA (Imágenes aéreas)
+      var pnoaLayer = L.tileLayer('https://tms-pnoa-ma.idee.es/1.0.0/pnoa-ma/{z}/{x}/{-y}.jpeg', {
+        maxZoom: 40,
+        attribution: 'CC BY 4.0 scne.es'
+      });
+      
+      // Capa Catastro
+      var catastroLayer = L.tileLayer.wms("http://ovc.catastro.meh.es/Cartografia/WMS/ServidorWMS.aspx?", {
+        layers: 'Catastro',
+        format: 'image/png',
+        transparent: true,
+        version: '1.1.1',
+        attribution: "DIRECCION GENERAL DEL CATASTRO",
+        maxZoom: 40
+      });
+      
+
+      // Capa Callejero IGN
+      var callejero = L.tileLayer.wms('http://www.ign.es/wms-inspire/ign-base?', {
+        layers: 'IGNBaseTodo',
+        format: 'image/png',
+        maxZoom: 40,
+        transparent: true,
+        attribution: '© Instituto Geográfico Nacional'
+      });
+
+      var googleSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&hl=es&z={z}&x={x}&y={y}', {
+        maxZoom: 40,
+        attribution: '&copy; <a href="https://www.google.com/intl/es/help/terms_maps.html">Google Maps</a>'
+      });
+
+      //***Capas de municipios y provincia***//
+
+      var municipios_cantabria = L.geoJson(municipios, { 
+        style: { "color": "#3182bd", "weight": 1, "opacity": 3.5, "fillOpacity": 0 },
+        onEachFeature: function(feature, layer) {
+          if (feature.properties && feature.properties.NAMEUNIT) {
+            layer.bindTooltip(feature.properties.NAMEUNIT, {
+            permanent: false,
+            direction: "top",
+            className: "municipio-css"
+            });
+          }
+        }
+        });
+
+      var cantabria_provincia = L.geoJson(cantabria, { 
+        style: { "color": "#EB5B00", "weight": 4, "opacity": 0.8, "fillOpacity": 0 }
+      }).addTo(map);
+
+
+
+      //**Obtener información de la parcela. Accede al proxy.js de ./Api/**//
+
+      map.on('click', function (e) {
+        const url = `/api/proxy?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetFeatureInfo&LAYERS=Catastro&QUERY_LAYERS=Catastro&INFO_FORMAT=text/xml&SRS=EPSG:4326&BBOX=${map.getBounds().toBBoxString()}&WIDTH=${map.getSize().x}&HEIGHT=${map.getSize().y}&X=${Math.floor(e.containerPoint.x)}&Y=${Math.floor(e.containerPoint.y)}`;
+
+        fetch(url)
+          .then(response => response.text())
+          .then(data => {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(data, "text/xml");
+
+            const enlace = xmlDoc.getElementsByTagName("a")[0];
+            const referenciaCatastral = enlace?.textContent || "No disponible";
+           
+            const rc1 = referenciaCatastral.substring(0, 7);
+            const rc2 = referenciaCatastral.substring(7);
+
+            const sedeElectronicaUrl = `https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?RC1=${rc1}&RC2=${rc2}&RC3=&RC4=&esBice=&RCBice1=&RCBice2=&DenoBice=&pest=rc&final=&RCCompleta=${referenciaCatastral}&from=OVCBusqueda&tipoCarto=nuevo&ZV=NO&ZR=NO&anyoZV=&strFechaVR=&tematicos=&anyotem=`;
+
+            const popupContent = `
+                <strong>Referencia catastral:</strong>
+                <a href="${sedeElectronicaUrl}" target="_blank">${referenciaCatastral}</a>
+            `;
+
+            L.popup()
+                .setLatLng(e.latlng)
+                .setContent(popupContent)
+                .openOn(map);
+          })
+          .catch(error => console.error('Error en GetFeatureInfo:', error));
+      });
+
+      //**Control de capas. Mapas base y después otras capas**//
+      var baseMaps = {
+        "Callejero IGN": callejero,
+        "Google Maps": googleLayer,
+        "Open Street Map": osmLayer,
+        "Imagen PNOA": pnoaLayer,
+        "Google Satellite": googleSatellite
+      };
+      
+      
+      var overlay = {
+        "Catastro": catastroLayer,
+        "Cantabria": cantabria_provincia,
+        "Municipios": municipios_cantabria
+      };
+
+      L.control.layers(baseMaps, overlay, { position: 'topright' }).addTo(map);
+      L.control.scale({ metric: true, imperial: false }).addTo(map);
+
+
+      
+      //**Actualizar coordenadas al mover el ratón**//
+      function updateCoordinates(e) {
+        if (frozenCoords) return;
+        var lat = e.latlng.lat;
+        var lng = e.latlng.lng;
+        var etrsCoords = proj4('EPSG:4326', '+proj=utm +zone=30 +datum=ETRS89 +units=m +no_defs', [lng, lat]);
+        
+        $('#xCoord').text(etrsCoords[0].toFixed(2));
+        $('#yCoord').text(etrsCoords[1].toFixed(2));
+      }
+
+      map.on('mousemove', updateCoordinates);
+
+      // Congelar y descongelar coordenadas
+      map.on('click', function(e) {
+        frozenCoords = !frozenCoords;
+        if (!frozenCoords) updateCoordinates(e);
+      });
+
+      // Copiar coordenadas X al portapapeles
+      $('#copyXButton').on('click', function() {
+        const xCoord = $('#xCoord').text();
+        navigator.clipboard.writeText(xCoord).then(() => {
+          alert('¡Coordenada X copiada al portapapeles!');
+        }).catch(err => {
+          console.error('Error al copiar al portapapeles: ', err);
+        });
+      });
+
+      // Copiar coordenadas Y al portapapeles
+      $('#copyYButton').on('click', function() {
+        const yCoord = $('#yCoord').text();
+        navigator.clipboard.writeText(yCoord).then(() => {
+          alert('¡Coordenada Y copiada al portapapeles!');
+        }).catch(err => {
+          console.error('Error al copiar al portapapeles: ', err);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
